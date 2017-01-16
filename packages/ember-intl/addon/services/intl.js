@@ -43,16 +43,11 @@ function formatterProxy(formatType) {
       options = assign(assign({}, this.getFormat(formatType, options.format)), options);
     }
 
-    if (!formats) {
-      formats = get(this, 'formats');
-    }
-
     const formatter = this.owner.lookup(`ember-intl@formatter:format-${formatType}`);
-    const locale = makeArray(options.locale || get(this, '_locale')).map(normalizeLocale);
 
     return formatter.format(value, options, {
-      formats,
-      locale
+      formats: formats || get(this, 'formats'),
+      locale: this._negotiateLocale(options.locale)
     });
   };
 }
@@ -147,7 +142,7 @@ const IntlService = Service.extend(Evented, {
   },
 
   lookup(key, localeName, options = {}) {
-    const localeNames = makeArray(localeName || get(this, '_locale'));
+    const localeNames = this._negotiateLocale(localeName);
     const translation = get(this, 'adapter').lookup(localeNames, key);
 
     if (!options.resilient && !translation) {
@@ -166,17 +161,27 @@ const IntlService = Service.extend(Evented, {
     return this.formatMessage(translation, ...args);
   },
 
-  exists(key, optionalLocaleNames) {
-    let localeNames = optionalLocaleNames;
-    let adapter = get(this, 'adapter');
-
-    if (!optionalLocaleNames) {
-      localeNames = get(this, '_locale');
+  _negotiateLocale(optionalLocales) {
+    if (!optionalLocales) {
+      return get(this, '_locale');
     }
 
-    assert(`[ember-intl] locale is unset, cannot lookup '${key}'`, localeNames);
+    if (typeof optionalLocales === 'string') {
+      return makeArray(normalizeLocale(optionalLocales));
+    }
 
-    return makeArray(localeNames).some((localeName) => {
+    if (Array.isArray(optionalLocales)) {
+      return optionalLocales.map(normalizeLocale);
+    }
+  },
+
+  exists(key, localeName) {
+    const localeNames = this._negotiateLocale(localeName);
+    const adapter = get(this, 'adapter');
+
+    assert(`[ember-intl] locale is unset, cannot lookup '${key}'`, Array.isArray(localeNames) && localeNames.length);
+
+    return localeNames.some((localeName) => {
       return adapter.has(localeName, key);
     });
   },
@@ -240,7 +245,7 @@ const IntlService = Service.extend(Evented, {
   },
 
   localeFactory(locale) {
-    const result = get(this, 'adapter').localeFactory(locale, true);
+    const result = get(this, 'adapter').localeFactory(normalizeLocale(locale), true);
 
     return RSVP.cast(result).then(function(localeInstance) {
       return localeInstance;
